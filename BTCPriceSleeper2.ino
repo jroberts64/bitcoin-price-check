@@ -1,23 +1,36 @@
+#define IOTWEBCONF_DEBUG_PWD_TO_SERIAL 1
+#define IOTWEBCONF_DEBUG_TO_SERIAL 1
+
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <IotWebConf.h>
 
 #include <ArduinoJson.h> 
 #include <GxEPD2_BW.h>
 #include <GxEPD2_3C.h>
+#include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
 #include <Fonts/FreeSansBold18pt7b.h>
-
-char wifiSSID[] = "6787564891";
-char wifiPASS[] = "j1a9d6e6";
 
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
+// -- Initial name of the Thing. Used e.g. as SSID of the own Access Point.
+const char thingName[] = "BitcoinPrice";
+
+// -- Initial password to connect to the Thing, when it creates an own Access Point.
+const char wifiInitialApPassword[] = "ToTheMoon";
+
+DNSServer dnsServer;
+WebServer server(80);
+
+IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword);
+
+
 // Variables to save date and time
-String formattedDate;
 String dayStamp;
 String timeStamp;
 
@@ -95,65 +108,145 @@ const unsigned char logo [] PROGMEM = {
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 };
 
+
+
+
+
 void setup() {
-  delay(1000);
-  Serial.begin(115200); 
-  while (!Serial);
-
-  print_wakeup_reason();      
-  connectToWifi();
+  initSerial();
   initDisplay();
-    
-  // Initialize a NTPClient to get time
-    timeClient.begin();
-    // Set offset time in seconds to adjust for your timezone, for example:
-    // GMT +1 = 3600
-    // GMT +8 = 28800
-    // GMT -1 = -3600
-    // GMT 0 = 0
-    timeClient.setTimeOffset(-14400);
-    timeClient.update();
-
-  ONprice();
+  setupWiFi();
+  Serial.print("MAC address: ");
+  Serial.println(WiFi.macAddress());
+  //initIotWebConf();
+  //connectToWifi();
+  initTime();  
+  getPrice();
   showPrice();
-  WiFi.disconnect();
-  
-  esp_sleep_enable_timer_wakeup(900000000); // check every 15 minutes
-  Serial.println("SETUP: GOODNIGHT!");
-  esp_deep_sleep_start();
+  deepSleep();
 }
-
 
 void loop() {
+  //delay(1000);
+  //Serial.println(".");
 }
+
+void initSerial() {
+  delay(1000);
+  Serial.begin(921600); 
+  while (!Serial);
+}
+
+void setupWiFi () {
+  int i;
+  
+  /* start SmartConfig */
+  WiFi.begin();
+  delay(3000);
+  i=1;
+  displayInfo("Waiting for WiFi.","","");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print("Waiting for WiFi. Status = "); Serial.println(WiFi.status());
+    if( WiFi.status() == WL_NO_SSID_AVAIL || !(i++ % 10)) {
+      configureWifi();
+      WiFi.printDiag(Serial); 
+      Serial.println(WiFi.localIP());
+      displayInfo("Waiting for WiFi.","","");
+    }
+    delay(3000);
+  }
+    Serial.println( "reconnected from stored credentials");
+    WiFi.printDiag(Serial); 
+    Serial.println(WiFi.localIP());
+    Serial.println("Connected to wifi");
+    delay(3000);
+    return;
+
+  
+}
+
+void configureWifi() {
+  iotWebConf.init();
+
+  // -- Set up required URL handlers on the web server.
+  server.on("/", handleRoot);
+  server.on("/config", []{ iotWebConf.handleConfig(); });
+  server.onNotFound([](){ iotWebConf.handleNotFound(); });
+  
+  Serial.println("SSID: Bitcoin Price Pwd: ToTheMoon  Then Then http://192.168.4.1/config");
+  displayInfo("SSID: Bitcoin Price", "Pwd: ToTheMoon", "URL: http://192.168.4.1/config");
+
+  while (1) {
+    iotWebConf.doLoop();
+    if( WiFi.status() == WL_CONNECTED) break;
+  }
+  
+}
+
+void handleRoot()
+{
+  // -- Let IotWebConf test and handle captive portal requests.
+  if (iotWebConf.handleCaptivePortal())
+  {
+    // -- Captive portal request were already served.
+    return;
+  }
+  String s = "<!DOCTYPE html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no\"/>";
+  s += "<title>IotWebConf 01 Minimal</title></head><body>Hello world!";
+  s += "Go to <a href='config'>configure page</a> to change settings.";
+  s += "</body></html>\n";
+
+  server.send(200, "text/html", s);
+}
+
 
 void print_wakeup_reason(){
   esp_sleep_wakeup_cause_t wakeup_reason;
   wakeup_reason = esp_sleep_get_wakeup_cause();
-  switch(wakeup_reason)
+  Serial.println(wakeup_reason);
+}
+
+String getWakeupReason(esp_sleep_wakeup_cause_t reason) {
+  switch(reason)
   {
-    case 1  : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
-    case 2  : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
-    case 3  : Serial.println("Wakeup caused by timer"); break;
-    case 4  : Serial.println("Wakeup caused by touchpad"); 
-      Serial.print("touch pin = ");
-      Serial.println(esp_sleep_get_touchpad_wakeup_status());
-      break;
-    case 5  : Serial.println("Wakeup caused by ULP program"); break;
-    default : Serial.println("Wakeup was not caused by deep sleep"); break;
+    case 1  : return "Wakeup caused by external signal using RTC_IO";
+    case 2  : return "Wakeup caused by external signal using RTC_CNTL";
+    case 3  : return "Wakeup caused by timer";
+    case 4  : return "Wakeup caused by touchpad";
+    case 5  : return "Wakeup caused by ULP program";
+    default : return "Wakeup was not caused by deep sleep";
   }
+}
+
+void wifiConnected() {
+  initTime();  
+  getPrice();
+  showPrice();
+  deepSleep();  
+}
+
+void initTime() {
+    timeClient.begin();
+    timeClient.setTimeOffset(-14400); // GMT - 4 hours (3600 * -4)
+    timeClient.update();
+}
+
+void initDisplay() {
+  display.init(115200);
+  display.setRotation(1);
+  display.setFont(&FreeSansBold18pt7b);
+  display.setTextColor(GxEPD_BLACK);
 }
 
 const char* host = "api.coindesk.com";
 const int httpsPort = 443;
-
-void ONprice(){
+void getPrice(){
   WiFiClientSecure client;
   String on_currency = "USD";
   
   if (!client.connect(host, httpsPort)) {
     Serial.print("Unable to connect: IP = " + WiFi.localIP());
-    
+    price = "can't connect";
     return;
   }
   String url = "/v1/bpi/currentprice.json";
@@ -179,14 +272,8 @@ void ONprice(){
   Serial.println("Current price is " + price);
 }
 
-void initDisplay() {
-  display.init(115200);
-  display.setRotation(1);
-  display.setFont(&FreeSansBold18pt7b);
-  display.setTextColor(GxEPD_BLACK);
-
-}
 void showPrice() {
+  String formattedDate;
 
   formattedDate = timeClient.getFormattedDate();
   int splitT = formattedDate.indexOf("T");
@@ -199,6 +286,7 @@ void showPrice() {
   timeStamp = formattedDate.substring(splitT+1, formattedDate.length()-1);
   Serial.print("HOUR: ");  Serial.println(timeStamp);
 
+  display.setFont(&FreeSansBold18pt7b);
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
@@ -211,39 +299,30 @@ void showPrice() {
     display.print(dayStamp);
     display.setCursor(35, 119);
     display.print(timeStamp);
+    display.setFont(&FreeSans9pt7b);
+    display.setCursor(244, 119);
+    display.print("8/8/93");
   } while (display.nextPage());
 }
 
-
-void waitForWifiConnect() {
-  int count = 0;
-  
-  while (WiFi.status() != WL_CONNECTED) {
-    count++;
-    Serial.print("\t count = "); Serial.println(count);
-    if( ! (count % 4) ) {
-     Serial.println("\tretry WiFi Connect.");
-     break;
-    }
-    delay(30000); // wait 30 seconds
-  }
+void displayInfo(String text1, String text2, String text3) {
+  display.setFont(&FreeSans9pt7b);
+  display.fillScreen(GxEPD_WHITE);
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(15, 15);
+    display.print(text1);
+    display.setCursor(15, 35);
+    display.print(text2);
+    display.setCursor(15, 55);
+    display.print(text3);
+  } while (display.nextPage());
 }
-
-void connectToWifi() {
-
-  Serial.println("CONNECTTOWIFI");
-
-  while (WiFi.status() != WL_CONNECTED) {
-
-    Serial.println("disconnecting from wifi.");
-    WiFi.disconnect(true);
-    delay(1000);  
-    
-    Serial.println("\tconnecting to wifi.");
-    WiFi.begin(wifiSSID, wifiPASS);   
-    delay(1000); // wait 10 seconds
-
-    waitForWifiConnect();
-  }
-  Serial.println("\tconnected: IP = " + WiFi.SSID());
+void deepSleep() {
+  WiFi.disconnect();
+  
+  esp_sleep_enable_timer_wakeup(900000000); // check every 15 minutes
+  Serial.println("SETUP: GOODNIGHT!");
+  esp_deep_sleep_start();
 }
