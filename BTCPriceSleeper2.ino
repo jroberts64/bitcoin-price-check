@@ -7,11 +7,21 @@
 #include <WiFiUdp.h>
 #include <IotWebConf.h>
 
+#include <Timezone.h>   // https://github.com/JChristensen/Timezone
+
+// US Eastern Time Zone (New York, Detroit)
+TimeChangeRule myDST = {"EDT", Second, Sun, Mar, 2, -240};    // Daylight time = UTC - 4 hours
+TimeChangeRule mySTD = {"EST", First, Sun, Nov, 2, -300};     // Standard time = UTC - 5 hours
+Timezone myTZ(myDST, mySTD);
+
+TimeChangeRule *tcr;        // pointer to the time change rule, use to get TZ abbrev
+
+
 #include <ArduinoJson.h> 
 #include <GxEPD2_BW.h>
 #include <GxEPD2_3C.h>
 #include <Fonts/FreeSans9pt7b.h>
-#include <Fonts/FreeSansBold12pt7b.h>
+#include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSansBold18pt7b.h>
 
 // Define NTP Client to get time
@@ -120,10 +130,34 @@ void setup() {
   Serial.println(WiFi.macAddress());
   //initIotWebConf();
   //connectToWifi();
-  initTime();  
+  initTime();
+  setTimeZone(); 
   getPrice();
   showPrice();
   deepSleep();
+}
+
+void getDateTime(time_t t, const char *tz, char *buf)
+{
+    //char buf[32];
+    char m[4];    // temporary storage for month string (DateStrings.cpp uses shared buffer)
+    strcpy(m, monthShortStr(month(t)));
+    sprintf(buf, "%.2d:%.2d:%.2d %s %.2d %s %d %s",
+        hour(t), minute(t), second(t), dayShortStr(weekday(t)), day(t), m, year(t), tz);
+}
+
+void getCurrentDate(time_t t, const char *tz, char *buf)
+{
+    char m[4];    // temporary storage for month string (DateStrings.cpp uses shared buffer)
+    strcpy(m, monthShortStr(month(t)));
+    sprintf(buf, "%s %.2d %s %d",
+        dayShortStr(weekday(t)), day(t), m, year(t));
+}
+
+void getCurrentTime(time_t t, const char *tz, char *buf)
+{
+    sprintf(buf, "%.2d:%.2d:%.2d %s",
+        hour(t), minute(t), second(t), tz);
 }
 
 void loop() {
@@ -132,9 +166,9 @@ void loop() {
 }
 
 void initSerial() {
-  delay(1000);
   Serial.begin(921600); 
   while (!Serial);
+  delay(3000);
 }
 
 void setupWiFi () {
@@ -227,8 +261,22 @@ void wifiConnected() {
 
 void initTime() {
     timeClient.begin();
-    timeClient.setTimeOffset(-14400); // GMT - 4 hours (3600 * -4)
+    //timeClient.setTimeOffset(-14400); // GMT - 4 hours (3600 * -4)
     timeClient.update();
+}
+
+void setTimeZone() {
+  char buf[32];
+  
+  //setTime(01, 55, 00, 11, 3, 2012);
+  time_t currentTime = timeClient.getEpochTime();
+  setTime(currentTime);
+  time_t utc = now();
+  time_t local = myTZ.toLocal(utc, &tcr);
+  getDateTime(utc, "UTC", buf);
+  Serial.println(buf);
+  getDateTime(local, tcr -> abbrev, buf);
+  Serial.println(buf);
 }
 
 void initDisplay() {
@@ -273,7 +321,10 @@ void getPrice(){
 }
 
 void showPrice() {
-  String formattedDate;
+  String  formattedDate;
+  char    buf[32];
+  time_t utc = now();
+  time_t local = myTZ.toLocal(utc, &tcr);
 
   formattedDate = timeClient.getFormattedDate();
   int splitT = formattedDate.indexOf("T");
@@ -291,17 +342,21 @@ void showPrice() {
   do {
     display.fillScreen(GxEPD_WHITE);
     display.drawInvertedBitmap(0, 0, logo, 200, 42, GxEPD_BLACK);
-    display.setCursor(35, 70);
+    display.setCursor(65, 70);
     Serial.println("Sending price to display " + price);
     display.print("$" + price);
-    display.setCursor(35, 99);
-    display.setFont(&FreeSansBold12pt7b);
-    display.print(dayStamp);
-    display.setCursor(35, 119);
-    display.print(timeStamp);
-    display.setFont(&FreeSans9pt7b);
-    display.setCursor(244, 119);
-    display.print("8/8/93");
+    display.setCursor(65, 99);
+    display.setFont(&FreeSans12pt7b);
+    //display.print(dayStamp);
+    getCurrentDate(local, tcr -> abbrev, buf);
+    display.print(buf);
+    //display.print(timeStamp);
+    display.setCursor(65, 121);
+    getCurrentTime(local, tcr -> abbrev, buf);
+    display.print(buf);
+    //display.setFont(&FreeSans9pt7b);
+    //display.setCursor(244, 121);
+    //display.print("8/8/93");
   } while (display.nextPage());
 }
 
