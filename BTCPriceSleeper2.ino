@@ -55,8 +55,6 @@ void setup() {
   setupWiFi();
   Serial.print("MAC address: ");
   Serial.println(WiFi.macAddress());
-  //initIotWebConf();
-  //connectToWifi();
   initTime();
   setTimeZone(); 
   getPrice();
@@ -66,7 +64,6 @@ void setup() {
 
 void getDateTime(time_t t, const char *tz, char *buf)
 {
-    //char buf[32];
     char m[4];    // temporary storage for month string (DateStrings.cpp uses shared buffer)
     strcpy(m, monthShortStr(month(t)));
     sprintf(buf, "%.2d:%.2d:%.2d %s %.2d %s %d %s",
@@ -88,8 +85,6 @@ void getCurrentTime(time_t t, const char *tz, char *buf)
 }
 
 void loop() {
-  //delay(1000);
-  //Serial.println(".");
 }
 
 void initSerial() {
@@ -274,16 +269,11 @@ void showPrice() {
     display.print("$" + price);
     display.setCursor(65, 99);
     display.setFont(&FreeSans12pt7b);
-    //display.print(dayStamp);
     getCurrentDate(local, tcr -> abbrev, buf);
     display.print(buf);
-    //display.print(timeStamp);
     display.setCursor(65, 121);
     getCurrentTime(local, tcr -> abbrev, buf);
     display.print(buf);
-    //display.setFont(&FreeSans9pt7b);
-    //display.setCursor(244, 121);
-    //display.print("8/8/93");
   } while (display.nextPage());
 }
 
