@@ -25,5 +25,4 @@ Assuming you have the same usb/uart controller I use, you'll need the driver fro
 
 You should see a device the looks something like this, "/dev/cu.SLAB_USBtoUART". If you don't have it, the Silicon Labs USB to UART Bridge VCP driver located here are probably what you're looking for. (https://www.silabs.com/products/development-tools/software/usb-to-uart-bridge-vcp-drivers) Download, install and check for the device again as described above.
 
-
-
+## To Be Continued...
