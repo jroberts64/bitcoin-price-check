@@ -49,6 +49,7 @@ GxEPD2_BW<GxEPD2_290, GxEPD2_290::HEIGHT> display(GxEPD2_290(/*CS=5*/ SS, /*DC=*
 
 String price;
 
+// Called at power on and after deep sleep
 void setup() {
   initSerial();
   initDisplay();
@@ -84,6 +85,8 @@ void getCurrentTime(time_t t, const char *tz, char *buf)
         hour(t), minute(t), second(t), tz);
 }
 
+// Called continuously after the setup() function
+// Not used here since we call deepSleep at the end of setup()
 void loop() {
 }
 
